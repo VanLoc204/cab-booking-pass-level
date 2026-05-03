@@ -534,3 +534,66 @@ node test-performance-peak-hour.js
 node test-performance-auto-scaling.js
 
 ![alt text](img/image-91.png)
+
+# Test case level 8: Resilience & Failure Testing
+
+## TC 71: Driver Service Failure - Fallback to PENDING
+- **Ngữ cảnh:** Hệ thống quản lý tài xế (Driver Service) bị sập hoặc không thể truy cập.
+- **Mục tiêu:** Đảm bảo Booking Service không bị crash, thực hiện Retry và Fallback để giữ đơn hàng ở trạng thái chờ.
+- **Các bước thực hiện:**
+  1. Đánh sập Driver Service: `docker-compose stop driver-service`
+  2. Gửi request tạo Booking qua Postman.
+- **Cơ chế Resilience:**
+  - **Retry:** Hệ thống tự động thử lại 3 lần (mỗi lần cách nhau 1s). Thể hiện qua thời gian phản hồi ~9s.
+  - **Fallback:** Sau khi Retry thất bại, hệ thống tự động chuyển trạng thái Booking thành `PENDING` thay vì báo lỗi.
+- **Kết quả:** Trả về `201 Created`, đơn hàng được lưu an toàn vào DB.
+
+![TC 71 Result](img/image-92.png)
+
+*Lưu ý: Bật lại service sau khi test xong:* `docker-compose start driver-service`
+
+## TC 72: Pricing Service Timeout - Default Price Fallback
+- **Ngữ cảnh:** Service tính giá (Pricing Service) gặp sự cố hoặc phản hồi chậm.
+- **Mục tiêu:** Hệ thống vẫn phải tạo được Booking bằng cách sử dụng giá mặc định/ngẫu nhiên để không làm gián đoạn trải nghiệm người dùng.
+- **Các bước thực hiện:**
+  1. Đánh sập Pricing Service: `docker-compose stop pricing-service`
+  2. Gửi request tạo Booking qua Postman.
+- **Cơ chế Resilience:**
+  - **Retry:** Thử gọi Pricing Service 3 lần.
+  - **Fallback:** Sử dụng logic tính giá dự phòng (Fallback Price) khi không có phản hồi từ service chính.
+- **Kết quả:** Trả về `201 Created`, Booking có giá dự phòng và trạng thái `REQUESTED` (nếu Driver Service online).
+
+![TC 72 Result](img/image-93.png)
+
+*Lưu ý: Bật lại service sau khi test xong:* `docker-compose start pricing-service`
+## TC 73: Kafka Broker Failure - Event Buffering & Outbox Pattern
+**Mục tiêu:** Kiểm tra khả năng chịu lỗi khi Broker (Kafka) sập, đảm bảo tính toàn vẹn dữ liệu (No Data Loss) và tính sẵn sàng của hệ thống (No Crash).
+
+### 1. Các bước thực hiện:
+- **Bước 1:** Chủ động đánh sập Kafka Broker: `docker-compose stop kafka`
+- **Bước 2:** User thực hiện tạo Booking qua Postman.
+- **Bước 3:** Kiểm tra hàng chờ Outbox (Buffer): `GET http://localhost:3002/health/outbox`
+- **Bước 4:** Khôi phục Kafka: `docker-compose start kafka`
+- **Bước 5:** Kiểm tra lại hàng chờ để xác nhận Event đã được đẩy đi thành công.
+
+### 2. Giải thích kết quả (Chứng minh với Giảng viên):
+
+| Yêu cầu của thầy | Minh chứng thực tế | Giải thích kỹ thuật |
+| :--- | :--- | :--- |
+| **System không crash** | Postman trả về **201 Created** ngay lập tức. | Nhờ **Outbox Pattern**, việc tạo Booking chỉ phụ thuộc vào Database. Booking Service không cần đợi Kafka phản hồi mới trả kết quả cho User, giúp hệ thống luôn sẵn sàng. |
+| **Event được Buffer (Outbox)** | API Healthcheck báo trạng thái **`PROCESSING: 1`**. | Event không bị mất mà được "buffer" (lưu tạm) vào bảng `OutboxEvents` trong DB. Trạng thái `PROCESSING` cho thấy Worker đang giữ Event này và sẵn sàng đẩy đi khi có kết nối. |
+| **Không mất dữ liệu** | Sau khi bật Kafka, trạng thái chuyển thành **`PUBLISHED`**. | Khi Kafka phục hồi, Outbox Worker tự động quét lại các Event bị kẹt và gửi bù. Dữ liệu được đảm bảo an toàn tuyệt đối trong Database cho đến khi gửi thành công. |
+
+### 3. Hình ảnh minh họa:
+
+**Hình 1: Tạo đơn hàng thành công dù Kafka đang sập (Resilience)**
+![alt text](img/image-94.png)
+
+**Hình 2: Event được giữ an toàn trong hàng chờ Outbox (Buffering)**
+![alt text](img/image-95.png)
+
+**Hình 3: Hệ thống tự động gửi bù Event ngay khi Kafka sống lại (Recovery)**
+![alt text](img/image-96.png)
+
+---
+*Ghi chú: Cơ chế này đảm bảo tính "Eventual Consistency" (Sự nhất quán cuối cùng) cho hệ thống Microservices.*

@@ -4,22 +4,44 @@ const { Booking, OutboxEvent, sequelize } = require('../models');
 
 class BookingService {
   async createBooking(userId, pickup, destination, price, distance, duration, routeData, idempotencyKey) {
-    // Item 13 check: Kiểm tra tài xế Online
+    // Item 13 check: Kiểm tra tài xế Online with Retry & Fallback for Level 8 Resilience
+    let isPending = false;
     try {
       const axios = require('axios');
       const driverServiceUrl = process.env.DRIVER_SERVICE_URL || 'http://driver-service:3003';
-      console.log(`[BookingService] Checking available drivers at: ${driverServiceUrl}/api/drivers/available`);
-      const driversRes = await axios.get(`${driverServiceUrl}/api/drivers/available`);
       
-      if (!driversRes.data.data || driversRes.data.data.length === 0) {
-        console.warn(`[BookingService] No drivers available for userId ${userId}`);
-        return { error: 'No drivers available', status: 'FAILED' };
+      let attempts = 0;
+      let success = false;
+      let driversRes;
+
+      while (attempts < 3 && !success) {
+        attempts++;
+        try {
+          console.log(`[BookingService] Driver check attempt ${attempts} at: ${driverServiceUrl}/api/drivers/available`);
+          // Gán timeout ngắn để test retry nhanh hơn
+          driversRes = await axios.get(`${driverServiceUrl}/api/drivers/available`, { timeout: 2000 });
+          success = true;
+        } catch (error) {
+          console.warn(`[BookingService] Attempt ${attempts} failed: ${error.message}`);
+          if (attempts < 3) {
+            console.log(`[BookingService] Waiting 1s before retry...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
       }
-      console.log(`[BookingService] Found ${driversRes.data.data.length} available drivers.`);
+
+      if (!success) {
+        console.error(`[BookingService] All 3 attempts failed. Activating Fallback to PENDING.`);
+        isPending = true;
+      } else if (!driversRes.data.data || driversRes.data.data.length === 0) {
+        console.warn(`[BookingService] Driver service UP but no drivers available for userId ${userId}`);
+        return { error: 'No drivers available', status: 'FAILED' };
+      } else {
+        console.log(`[BookingService] Found ${driversRes.data.data.length} available drivers.`);
+      }
     } catch (err) {
-      console.error(`[BookingService] Driver check failed: ${err.message}`);
-      // Nếu không gọi được Driver Service, ta cũng coi như không có tài xế để an toàn (Fail-safe)
-      return { error: 'No drivers available', status: 'FAILED' };
+      console.error(`[BookingService] Critical resilience failure: ${err.message}`);
+      isPending = true; 
     }
 
     // AI Service Call for ETA
@@ -37,18 +59,40 @@ class BookingService {
       finalDuration = finalDuration || Math.ceil(Number(distance) * 2.5); // Fallback logic
     }
 
-    // Pricing Service Call for Price
+    // Pricing Service Call for Price with Retry & Fallback
     let finalPrice = price;
     try {
       const pricingServiceUrl = process.env.PRICING_SERVICE_URL || 'http://pricing-service:3005';
-      const pricingRes = await axios.post(`${pricingServiceUrl}/api/pricing`, { 
-        distance_km: Number(distance),
-        demand_index: 1.0 
-      });
-      finalPrice = pricingRes.data.price;
-      console.log(`[BookingService] Fetched Price: ${finalPrice}`);
+      const axios = require('axios');
+      
+      let pAttempts = 0;
+      let pSuccess = false;
+      let pricingRes;
+
+      while (pAttempts < 3 && !pSuccess) {
+        pAttempts++;
+        try {
+          console.log(`[BookingService] Pricing call attempt ${pAttempts} at: ${pricingServiceUrl}/api/pricing`);
+          pricingRes = await axios.post(`${pricingServiceUrl}/api/pricing`, { 
+            distance_km: Number(distance),
+            demand_index: 1.0 
+          }, { timeout: 2000 });
+          pSuccess = true;
+        } catch (error) {
+          console.warn(`[BookingService] Pricing attempt ${pAttempts} failed: ${error.message}`);
+          if (pAttempts < 3) await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      if (pSuccess) {
+        finalPrice = pricingRes.data.price;
+        console.log(`[BookingService] Fetched Price: ${finalPrice}`);
+      } else {
+        console.error(`[BookingService] All 3 Pricing attempts failed. Using Fallback price.`);
+        finalPrice = finalPrice || (Math.random() * (25 - 8) + 8).toFixed(2);
+      }
     } catch (err) {
-      console.error(`[BookingService] Pricing Service call failed: ${err.message}`);
+      console.error(`[BookingService] Critical Pricing failure: ${err.message}`);
       finalPrice = finalPrice || (Math.random() * (25 - 8) + 8).toFixed(2);
     }
 
@@ -59,7 +103,7 @@ class BookingService {
         userId,
         pickup,
         destination,
-        status: 'REQUESTED',
+        status: isPending ? 'PENDING' : 'REQUESTED',
         price: Number(finalPrice),
         distance,
         duration: finalDuration,
