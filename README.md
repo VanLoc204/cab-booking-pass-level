@@ -816,3 +816,104 @@ chạy lệnh: `node test-tc85.js`
 
 ### Hình ảnh minh chứng:
 ![alt text](img/image-117.png)
+# Test case level 10: ZERO TRUST SECURITY
+## TC 91:
+- **Kịch bản:** Người dùng (hoặc kẻ tấn công) cố gắng gọi API lấy danh sách đặt xe (`GET /bookings`) mà không đính kèm JWT Token trong Header.
+- **Mục tiêu:** Chứng minh hệ thống áp dụng nguyên tắc "Never trust", bắt buộc phải có định danh cho mọi yêu cầu từ bên ngoài.
+
+### Kết quả & Đánh giá (Minh chứng với giảng viên):
+1. **HTTP 401 Unauthorized:** Yêu cầu bị Gateway chặn đứng ngay lập tức khi không tìm thấy thông tin xác thực.
+2. **Message: "Missing token":** Thông báo lỗi rõ ràng, tuân thủ đúng yêu cầu bảo mật và đặc tả của dự án.
+3. **Giải thích kỹ thuật:** API Gateway sử dụng Middleware `authenticate` để kiểm tra Header `Authorization`. Nếu thiếu hoặc sai định dạng `Bearer <token>`, yêu cầu sẽ không bao giờ được chuyển tiếp đến các service bên trong (Internal Services).
+4. **Kết luận:** Hệ thống bảo vệ tài nguyên an toàn, ngăn chặn hoàn toàn truy cập nặc danh.
+
+### Hình ảnh minh chứng:
+![alt text](img/image-118.png)
+## TC 92:
+- **Kịch bản:** Người dùng gửi yêu cầu kèm theo một JWT Token đã bị chỉnh sửa nội dung (sai chữ ký).
+- **Mục tiêu:** Kiểm tra khả năng xác thực tính toàn vẹn (Integrity) của Token. Bất kỳ sự thay đổi nhỏ nào trong chuỗi Token đều phải bị phát hiện.
+
+### Kết quả & Đánh giá (Minh chứng với giảng viên):
+1. **HTTP 401 Unauthorized:** Hệ thống nhận diện Token đã bị can thiệp và từ chối truy cập.
+2. **Message: "Invalid token":** Thông báo lỗi chính xác, xác nhận Token không vượt qua được bước verify chữ ký số.
+3. **Giải thích kỹ thuật:** API Gateway sử dụng thư viện `jsonwebtoken` với secret key duy nhất để verify. Khi Token bị sửa đổi, chữ ký (signature) sẽ không khớp với phần header và payload, khiến quá trình xác thực thất bại.
+4. **Kết luận:** Hệ thống đảm bảo dữ liệu định danh không thể bị giả mạo.
+
+### Hình ảnh minh chứng:
+![alt text](img/image-119.png)
+## TC 93:
+- **Kịch bản:** Người dùng sử dụng một JWT Token đã quá thời hạn sử dụng.
+- **Cách thực hiện:**
+    1. Cài đặt thư viện: `npm install jsonwebtoken`
+    2. Chạy lệnh để lấy token hết hạn: `node gen_expired_token.js`
+    3. Gửi request kèm Token vừa lấy được trong Postman.
+
+### Kết quả & Đánh giá (Minh chứng với giảng viên):
+1. **HTTP 401 Unauthorized:** Hệ thống nhận diện Token đã hết hạn dựa trên claim `exp` bên trong Payload.
+2. **Message: "Token expired":** Thông báo lỗi chính xác, xác nhận phiên làm việc không còn hiệu lực.
+3. **Giải thích kỹ thuật:** Khi thực hiện `jwt.verify()`, hệ thống so sánh thời gian hiện tại với trường `exp` trong Token. Nếu đã quá hạn, Gateway sẽ chặn đứng request và yêu cầu đăng nhập lại.
+4. **Kết luận:** Hệ thống quản lý thời gian sống của phiên làm việc nghiêm ngặt, đảm bảo an toàn.
+
+### Hình ảnh minh chứng:
+![alt text](img/image-120.png)
+## TC 94:
+- **Kịch bản:** Các dịch vụ nội bộ (Internal Services) chỉ được phép giao tiếp với nhau khi có chứng chỉ bảo mật (Certificate). Ta thực hiện 2 bước:
+    1. Gửi request không kèm chứng chỉ.
+    2. Gửi request kèm chứng chỉ hợp lệ (`x-client-cert`).
+- **Mục tiêu:** Đảm bảo nguyên tắc Zero Trust: "Xác thực mọi thực thể", kể cả các dịch vụ bên trong hệ thống.
+
+### Kết quả & Đánh giá (Giải trình với giảng viên):
+1. **Mutual Auth REQUIRED:** Khi thiếu chứng chỉ, hệ thống trả về **401 Unauthorized** kèm mã `MTLS_REQUIRED`. Điều này chứng minh không có "vùng tin cậy" nào bị bỏ ngỏ.
+2. **Xác thực thành công:** Khi cung cấp đúng `x-client-cert` và `x-service-id`, hệ thống trả về **200 OK**, xác nhận dịch vụ đã được định danh.
+3. **Giải thích kỹ thuật:** Hệ thống mô phỏng lớp mTLS bằng cách kiểm tra chứng chỉ số ở tầng Gateway/Proxy. Mỗi dịch vụ khi gọi nhau phải trình diện "thẻ căn cước" điện tử để được phép truy cập tài nguyên.
+4. **Kết luận:** Hệ thống đạt tiêu chuẩn bảo mật giao tiếp nội bộ an toàn, chống lại các cuộc tấn công đánh tráo hoặc nghe lén (Man-in-the-middle).
+
+### Hình ảnh minh chứng:
+- **Từ chối kết nối khi thiếu chứng chỉ:**
+![alt text](img/image-121.png)
+- **Xác thực thành công với chứng chỉ hợp lệ:**
+![alt text](img/image-122.png)
+## TC 95:
+- **Kịch bản:** Một người dùng thông thường (role: user) cố gắng truy cập trực tiếp vào đường dẫn quản trị (`/admin/dashboard`) – một tài nguyên chỉ dành riêng cho Admin.
+- **Mục tiêu:** Chứng minh hệ thống thực thi chính sách phân quyền nghiêm ngặt, không cho phép người dùng vượt cấp (Privilege Escalation).
+
+### Kết quả & Đánh giá (Minh chứng với giảng viên):
+1. **HTTP 403 Forbidden:** Yêu cầu bị từ chối truy cập ngay tại Gateway sau khi kiểm tra quyền hạn.
+2. **Message: "Access denied":** Thông báo lỗi súc tích, xác nhận việc vi phạm chính sách phân quyền.
+3. **Giải thích kỹ thuật:** Hệ thống sử dụng Middleware phân quyền (RBAC) để đối chiếu giữa `role` của người dùng và danh sách `allowed_actions`. Vì vai trò `user` không có trong danh sách được phép truy cập `/admin/dashboard`, Gateway sẽ trả về lỗi 403.
+4. **Kết luận:** Cơ chế RBAC hoạt động ổn định, đảm bảo tính phân tách giữa các nhóm người dùng.
+### Hình ảnh minh chứng:
+![alt text](img/image-123.png)
+## TC 96:
+- **Kịch bản:** Giả lập tình huống một Tài xế (Driver) cố gắng gọi API để đọc dữ liệu cá nhân của người dùng khác (`GET /users/{user_id}`).
+- **Mục tiêu:** Chứng minh hệ thống áp dụng nguyên tắc "Quyền tối thiểu": Mỗi thực thể chỉ có đúng những quyền hạn cần thiết để hoàn thành công việc của mình, không được phép can thiệp vào dữ liệu không liên quan.
+
+### Kết quả & Đánh giá (Minh chứng với giảng viên):
+1. **HTTP 403 Forbidden:** Hệ thống chặn yêu cầu ngay lập tức vì hành động đọc dữ liệu cá nhân nằm ngoài phạm vi quyền hạn của Tài xế.
+2. **Message: "Access denied":** Thông báo từ chối truy cập rõ ràng, xác nhận vi phạm chính sách Least Privilege.
+3. **Giải thích kỹ thuật:** Hệ thống kiểm soát quyền hạn (RBAC) quy định rằng role `driver` chỉ có các quyền như `read` (general), `update_ride_status` và `view_bookings`. Các hành động liên quan đến `read_personal_data` trên tài nguyên người dùng bị cấm tuyệt đối đối với vai trò này.
+4. **Kết luận:** Hệ thống bảo mật dữ liệu khách hàng tốt, ngăn chặn việc lạm dụng quyền hạn từ các tác nhân bên trong.
+
+### Hình ảnh minh chứng:
+![alt text](img/image-124.png)
+## TC 97:
+- **Kịch bản:** Giả lập hành vi truy cập hệ thống theo 2 cách:
+    1. Gọi trực tiếp endpoint của service mà không qua Gateway (Bypass).
+    2. Truy cập hợp lệ thông qua API Gateway.
+- **Mục tiêu:** Chứng minh mọi traffic đều phải được "phễu" qua API Gateway, ngăn chặn tuyệt đối các kết nối "đi cửa sau" vào service nội bộ.
+
+### Kết quả & Đánh giá (Minh chứng với giảng viên):
+1. **Phát hiện Bypass:** Khi request thiếu header định danh `x-forwarded-via-gateway`, hệ thống trả về **403 Forbidden** kèm lỗi `BYPASS_DETECTED`.
+2. **Xác thực Gateway:** Khi request có header hợp lệ từ Gateway, hệ thống trả về **200 OK** và cho phép truy cập.
+3. **Giải thích kỹ thuật:** Hệ thống Zero Trust yêu cầu mỗi request vào service nội bộ phải mang theo một "Token định danh Gateway". Nếu không đi qua Gateway, request sẽ không có Token này và bị các service từ chối xử lý.
+4. **Kết luận:** Hệ thống bảo vệ toàn diện các Microservices, đảm bảo API Gateway là chốt chặn bảo mật duy nhất và không thể bị vượt qua.
+
+### Hình ảnh minh chứng:
+- **Trường hợp 1: Chặn truy cập trực tiếp (Bypass):**
+![alt text](img/image-125.png)
+- **Trường hợp 2: Truy cập hợp lệ qua Gateway:**
+![alt text](img/image-126.png)
+
+
+
+

@@ -552,7 +552,7 @@ app.post('/security/rbac-check', express.json(), (req, res) => {
             role,
             action,
             resource,
-            reason: `Role '${role}' does not have permission to '${action}' on '${resource}'`
+            reason: "Access denied"
         });
     }
     res.json({ authorized: true, role, action, resource });
