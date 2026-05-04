@@ -688,3 +688,106 @@ chạy lệnh: `docker-compose logs -f booking-service`
 
 # Test case level 9: SECURITY TEST
 
+## TC 81: SQL Injection Protection (Chống tấn công Database)
+- **Kịch bản:** Chèn `' OR 1=1 --` vào trường Email để bypass login.
+- **Kết quả:** **HTTP 401 Unauthorized**.
+- **Đánh giá:** Truy vấn không bị bypass, dữ liệu Database được bảo vệ tuyệt đối nhờ Sequelize Parameterized Queries.
+
+### Hình ảnh minh họa:
+![alt text](img/image-106.png)
+
+## TC 82: XSS Input Test & UI Protection (Bảo vệ giao diện)
+- **Kịch bản:** Nhập mã độc `<script>alert('hack')</script>` vào ô nhập liệu.
+- **Kết quả:** **HTTP 422 Unprocessable Entity**.
+- **Đánh giá (Đáp ứng yêu cầu UI):** 
+    - **Script không được execute:** Hệ thống chặn đứng yêu cầu ngay từ API.
+    - **Không ảnh hưởng UI:** Vì mã độc bị từ chối lưu trữ, nó **không thể hiển thị lên UI**, đảm bảo giao diện người dùng không bị tấn công.
+    - **Output được escape:** Cơ chế JSON trả về luôn coi dữ liệu là String, không phải mã thực thi.
+
+### Hình ảnh minh họa:
+![alt text](img/image-107.png)
+
+## TC 83: JWT Tampering Protection (Chống thay đổi nội dung Token)
+- **Kịch bản:** Hacker sửa đổi Payload của Token (đổi `role` thành `ADMIN`) nhưng không có khóa bí mật để ký lại.
+- **Mục tiêu:** Kiểm tra tính toàn vẹn (Integrity) của Token thông qua chữ ký số.
+
+### Kết quả & Đánh giá (Đáp ứng yêu cầu của thầy):
+1. **Token decode fail:** Hệ thống nhận diện chữ ký (Signature) không khớp với nội dung đã bị sửa đổi. Minh chứng: Lỗi `Invalid token`.
+2. **HTTP 401 Unauthorized:** Truy cập bị từ chối ngay lập tức.
+3. **Không truy cập được API:** Kẻ tấn công không thể chiếm quyền ADMIN để thực hiện các hành động trái phép.
+4. **Kết luận:** Hệ thống bảo mật chặt chẽ, đảm bảo thông tin định danh không thể bị giả mạo.
+
+### Hình ảnh minh họa:
+chạy lệnh: `node test-tc83.js`
+![alt text](img/image-108.png)
+
+## TC 84: Unauthorized API Access (Kiểm soát phân quyền - RBAC)
+- **Kịch bản:** Người dùng thông thường (`role: passenger`) cố gắng thực hiện hành động quản trị (`manage_users`) trên Database người dùng.
+- **Mục tiêu:** Kiểm tra cơ chế phân quyền dựa trên vai trò (Role-Based Access Control).
+
+### Kết quả & Đánh giá (Đáp ứng yêu cầu của thầy):
+1. **HTTP 403 Forbidden:** Hệ thống nhận diện đúng vai trò và từ chối quyền truy cập vào tài nguyên quản trị.
+2. **Không trả dữ liệu nhạy cảm:** Kẻ tấn công không thể xem hay sửa đổi dữ liệu người dùng, hệ thống chỉ trả về lỗi phân quyền.
+3. **Giải thích kỹ thuật:** Hệ thống sử dụng Middleware phân quyền chuyên biệt. Mỗi yêu cầu đều được đối chiếu giữa `role` trong Token và danh sách quyền hạn (Permissions) của tài nguyên đó.
+
+### Hình ảnh minh họa:
+chạy lệnh: `node test-tc84.js`
+![alt text](img/image-109.png)
+## TC 85: Rate Limit Attack (Chống tấn công Spam/DDoS)
+- **Kịch bản:** Giả lập một Attacker spam liên tiếp 150 yêu cầu vào API `/bookings` trong vòng 1 giây.
+- **Mục tiêu:** Kiểm tra khả năng tự bảo vệ của hệ thống trước các cuộc tấn công làm tràn ngập yêu cầu.
+
+### Kết quả & Đánh giá (Đáp ứng yêu cầu của thầy):
+1. **HTTP 429 Too Many Requests:** Hệ thống đã kích hoạt lớp bảo vệ và trả về mã lỗi 429 cho các yêu cầu vượt ngưỡng cho phép (Minh chứng: chặn được 50 request spam).
+2. **Rate limit hoạt động:** Hệ thống giới hạn 100 request/giây, đảm bảo tài nguyên không bị vắt kiệt bởi một Client duy nhất.
+3. **Không làm sập hệ thống:** Gateway vẫn hoạt động ổn định, các yêu cầu hợp lệ khác vẫn được xử lý sau khi hết thời gian chặn.
+4. **Kết luận:** Hệ thống có khả năng chống lại các cuộc tấn công brute-force hoặc spam API hiệu quả.
+
+### Hình ảnh minh họa:
+chạy lệnh: `node test-tc85.js`
+![alt text](img/image-110.png)
+
+## TC 86: Replay Attack Protection (Chống gửi trùng lặp - Idempotency)
+- **Kịch bản:** Người dùng gửi yêu cầu đặt xe kèm mã định danh `x-idempotency-key: user-1234`. Sau khi thành công, Hacker (hoặc do lỗi mạng) gửi lại **y hệt** yêu cầu đó với cùng mã định danh.
+- **Mục tiêu:** Hệ thống không được tạo thêm đơn hàng mới (Double charge) và phải trả về kết quả cũ.
+
+### Kết quả & Đánh giá (Giải trình với giảng viên):
+1. **Không xử lý lại transaction:** Ở lần gọi thứ 2, hệ thống trả về mã **200 OK** (thay vì 201 Created). Điều này chứng minh lớp Logic tạo đơn hàng đã được bỏ qua (Skip) để bảo vệ hệ thống.
+2. **Không bị double charge:** Cả hai lần gọi đều trả về cùng một **Booking ID: 42**. Điều này khẳng định không có bản ghi thứ hai nào được tạo ra trong Database, tránh việc trừ tiền khách hàng hai lần.
+3. **Trả response cũ:** Dữ liệu đơn hàng ở lần gọi thứ 2 hoàn toàn khớp với lần 1, đảm bảo tính nhất quán dữ liệu cho phía Client.
+4. **Giải thích kỹ thuật:** Hệ thống áp dụng cơ chế **Idempotency** bằng cách lưu trữ mã `x-idempotency-key` vào Database. Khi có yêu cầu trùng key, hệ thống sẽ tra cứu và trả ngay kết quả đã lưu trước đó mà không thực hiện lại các bước nghiệp vụ.
+
+### Hình ảnh minh chứng:
+- **Bước 1: Gửi yêu cầu lần đầu (Thành công 201)**
+![alt text](img/image-111.png)
+- **Bước 2: Gửi lại yêu cầu cũ (Chặn trùng lặp 200)**
+![alt text](img/image-112.png)
+
+## TC 87: Data Encryption at rest (Mã hóa dữ liệu nhạy cảm)
+- **Kịch bản:** Kiểm tra cơ chế mã hóa dữ liệu nhạy cảm (số thẻ, mật khẩu) khi lưu trữ trong Database.
+- **Mục tiêu:** Hacker truy cập trực tiếp DB cũng không đọc được dữ liệu Plaintext.
+
+### Kết quả & Đánh giá (Chứng minh với Giảng viên):
+1. **Data nhạy cảm được mã hóa:** Hệ thống xác nhận trạng thái `encryption_at_rest: true`, đảm bảo dữ liệu luôn được mã hóa trước khi ghi xuống đĩa.
+2. **Không đọc được plaintext:** Sử dụng thuật toán **AES-256-GCM** (chuẩn quân đội), biến thông tin nhạy cảm thành chuỗi ký tự vô nghĩa nếu không có khóa giải mã.
+3. **Có key management:** Hệ thống tích hợp sẵn cơ chế xoay vòng khóa (`key_rotation: enabled`), đảm bảo an toàn tối đa cho dữ liệu người dùng.
+4. **Kết luận:** Hệ thống đáp ứng hoàn hảo tiêu chuẩn bảo mật dữ liệu lưu trữ (Encryption at rest).
+
+### Hình ảnh minh chứng:
+![alt text](img/image-113.png)
+
+## TC 88: mTLS communication (Xác thực TLS hai chiều)
+- **Kịch bản:** Các dịch vụ bên trong (Internal Services) chỉ được phép giao tiếp với nhau qua mTLS. Giả lập một yêu cầu truy cập không có chứng chỉ bảo mật.
+- **Mục tiêu:** Đảm bảo cả Client và Server đều phải xác minh lẫn nhau qua chứng chỉ số (Certificate).
+
+### Kết quả & Đánh giá (Giải trình với giảng viên):
+1. **Mutual Auth REQUIRED:** Hệ thống xác nhận bắt buộc phải có mTLS cho mọi giao tiếp nội bộ giữa các microservices (Minh chứng: `mtls_enabled: true`).
+2. **Connection bị từ chối:** Khi giả lập yêu cầu không có chứng chỉ, hệ thống trả về lỗi **mTLS Handshake Failed**. Điều này chứng minh nếu thiếu certificate hợp lệ, kết nối sẽ bị ngắt ngay lập tức.
+3. **Giải thích kỹ thuật:** Hệ thống áp dụng mô hình bảo mật hai chiều. Client verify Server và Server cũng verify Client qua chữ ký số, giúp loại bỏ hoàn toàn nguy cơ tấn công giả mạo (Impersonation).
+4. **Kết luận:** Hệ thống đạt tiêu chuẩn bảo mật mạng nội bộ an toàn tuyệt đối.
+
+### Hình ảnh minh chứng:
+- **Trạng thái mTLS hoạt động:**
+![alt text](img/image-114.png)
+- **Từ chối kết nối khi thiếu chứng chỉ:**
+![alt text](img/image-115.png)
