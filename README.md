@@ -913,7 +913,49 @@ chạy lệnh: `node test-tc85.js`
 ![alt text](img/image-125.png)
 - **Trường hợp 2: Truy cập hợp lệ qua Gateway:**
 ![alt text](img/image-126.png)
+## TC 98: 
+- **Kịch bản:** Giả lập một cuộc tấn công "Spam" hoặc một Client bị lỗi gửi liên tiếp 120 yêu cầu trong vòng 1 giây (vượt ngưỡng 100 req/s cho phép).
+- **Mục tiêu:** Chứng minh hệ thống có khả năng tự bảo vệ (Self-protection) trước tình trạng quá tải và chống lạm dụng tài nguyên (Abuse).
 
+### Kết quả & Đánh giá (Minh chứng với giảng viên):
+1. **HTTP 429 Too Many Requests:** Từ request thứ 101 trở đi, API Gateway ngay lập tức trả về mã 429.
+2. **Hệ thống không bị quá tải:** Các service nội bộ không phải xử lý traffic vượt ngưỡng, giúp duy trì độ ổn định cho các người dùng hợp lệ khác.
+3. **Giải thích kỹ thuật:** API Gateway sử dụng cơ chế **Fixed Window Rate Limiting** (Cửa sổ thời gian cố định). Nó theo dõi số lượng request theo từng giây; nếu vượt quá 100, các request sau sẽ bị loại bỏ (Drop) ngay tại tầng biên (Edge).
+4. **Kết luận:** Hệ thống có khả năng chống Abuse và tấn công Brute-force hiệu quả, đảm bảo tính sẵn sàng cao.
+
+### Hình ảnh minh chứng:
+- **Kết quả chạy script kiểm thử tự động:** `node test-performance-rate-limit.js`
+![alt text](img/image-127.png)
+## TC 99:
+- **Kịch bản:** Giả lập việc truy cập hệ thống qua 2 giao thức:
+    1. HTTP thông thường (không có mã hóa TLS).
+    2. HTTPS/TLS (có mã hóa dữ liệu trên đường truyền).
+- **Mục tiêu:** Chứng minh hệ thống bảo vệ dữ liệu người dùng khỏi bị nghe lén bằng cách bắt buộc sử dụng các giao thức bảo mật.
+
+### Kết quả & Đánh giá (Minh chứng với giảng viên):
+1. **Chặn Plain HTTP:** Khi truy cập qua HTTP không an toàn, hệ thống trả về mã **400 Bad Request** kèm lỗi `INSECURE_TRANSPORT`.
+2. **Chấp nhận HTTPS:** Khi có mã hóa TLS (giả lập), hệ thống trả về **200 OK**, xác nhận kết nối được bảo vệ bằng TLS 1.3.
+3. **Giải thích kỹ thuật:** Hệ thống kiểm tra giao thức kết nối (`x-forwarded-proto`). Mọi yêu cầu không phải HTTPS đều bị Gateway chặn đứng từ "vòng gửi xe" để đảm bảo thông tin nhạy cảm không bị lộ plaintext trên hạ tầng mạng.
+4. **Kết luận:** Hệ thống đạt chuẩn an toàn dữ liệu, chống lại các cuộc tấn công đánh cắp thông tin trên đường truyền.
+
+### Hình ảnh minh chứng:
+- **Từ chối kết nối HTTP không an toàn:**
+![alt text](img/image-128.png)
+- **Chấp nhận kết nối HTTPS có mã hóa:**
+![alt text](img/image-129.png)
+
+## TC 100: 
+- **Kịch bản:** Truy xuất nhật ký kiểm toán (Audit Log) sau khi đã thực hiện một loạt các hành động bảo mật (Login, gọi API, thử nghiệm bypass...).
+- **Mục tiêu:** Chứng minh hệ thống có khả năng ghi nhật ký chi tiết và truy vết (Traceability) mọi hành động nhạy cảm, giúp quản trị viên phát hiện sớm các dấu hiệu tấn công.
+
+### Kết quả & Đánh giá (Minh chứng với giảng viên):
+1. **Dữ liệu đầy đủ:** Log hiển thị rõ ràng các trường: `timestamp`, `user_id`, `action`, `ip`, và `user_agent`.
+2. **Khả năng truy vết:** Các hành động như thử nghiệm bypass-check (`POST /zero-trust/bypass-check`) hay kiểm tra mã hóa (`POST /zero-trust/transit-check`) đều được ghi nhận chính xác theo thời gian thực.
+3. **Giải thích kỹ thuật:** Hệ thống sử dụng một **Audit Middleware** tập trung tại API Gateway. Middleware này sẽ "chụp" lại thông tin của mọi request đi qua các luồng Zero Trust và lưu trữ vào cơ sở dữ liệu nhật ký (Audit Store), đảm bảo không có hành động nào bị bỏ lọt.
+4. **Kết luận:** Hệ thống đạt tiêu chuẩn cao về giám sát an ninh, sẵn sàng cho việc điều tra và ứng cứu sự cố (Incident Response).
+
+### Hình ảnh minh chứng:
+![alt text](img/image-130.png)
 
 
 
