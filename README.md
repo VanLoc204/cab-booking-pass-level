@@ -791,3 +791,28 @@ chạy lệnh: `node test-tc85.js`
 ![alt text](img/image-114.png)
 - **Từ chối kết nối khi thiếu chứng chỉ:**
 ![alt text](img/image-115.png)
+
+## TC 89:
+- **Kịch bản:** Giả lập một tài xế (role: driver) cố gắng truy cập vào giao diện quản trị (admin_panel) để thực hiện hành động quản lý người dùng (manage_users).
+- **Mục tiêu:** Kiểm tra khả năng chặn truy cập dựa trên vai trò (Role-Based Access Control) ngay tại Gateway.
+
+### Kết quả & Đánh giá (Giải trình với giảng viên):
+1. **HTTP 403 Forbidden:** Hệ thống từ chối quyền truy cập ngay lập tức khi phát hiện role không hợp lệ cho hành động này.
+2. **Không truy cập được resource:** Kẻ tấn công (hoặc người dùng sai vai trò) không thể can thiệp vào các tài nguyên nhạy cảm của hệ thống.
+3. **Giải thích kỹ thuật:** Hệ thống sử dụng một bảng phân quyền (Permissions Map) để đối chiếu: vai trò `driver` chỉ được phép xem booking và cập nhật trạng thái chuyến đi, hoàn toàn không có quyền quản trị.
+4. **Kết luận:** Cơ chế RBAC được thực thi nghiêm ngặt, đảm bảo tính bảo mật và phân tách đặc quyền giữa các nhóm người dùng.
+
+### Hình ảnh minh chứng:
+![alt text](img/image-116.png)
+## TC 90:
+- **Kịch bản:** Giả lập một yêu cầu chứa các thông tin cá nhân nhạy cảm (Email, Số điện thoại, Số thẻ tín dụng, Mật khẩu).
+- **Mục tiêu:** Đảm bảo hệ thống không trả về dữ liệu thô (Plaintext) cho Client và không ghi dữ liệu nhạy cảm vào Log để tuân thủ bảo mật dữ liệu.
+
+### Kết quả & Đánh giá (Giải trình với giảng viên):
+1. **API trả về payment info:** Số thẻ tín dụng đã được che chỉ còn lại 4 số cuối (`**** **** **** 4321`).
+2. **Mask dữ liệu:** Email và số điện thoại cũng được che phần giữa, mật khẩu bị thay thế bằng chuỗi `[REDACTED]`.
+3. **Log không chứa thông tin nhạy cảm:** Tại Gateway, hệ thống chỉ log lại Method và Path, không log nội dung Body của các request nhạy cảm, giúp tránh rò rỉ dữ liệu qua file log.
+4. **Kết luận:** Hệ thống bảo vệ thông tin cá nhân của người dùng cực kỳ tốt, đáp ứng các tiêu chuẩn về an toàn thông tin (như PCI DSS cho dữ liệu thẻ).
+
+### Hình ảnh minh chứng:
+![alt text](img/image-117.png)
