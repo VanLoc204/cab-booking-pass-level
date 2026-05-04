@@ -656,5 +656,35 @@ docker-compose start driver-service
 ![alt text](img/image-101.png)
 
 ## TC 78:
+chưa làm được 
+## TC 79: Network Partition Test (Chia cắt mạng nội bộ)
+- **Kịch bản:** Dùng lệnh `docker network disconnect` để cô lập Pricing Service, sau đó `connect` để khôi phục.
 
+### Kết quả & Đánh giá:
+- **Khi ngắt mạng:** Hệ thống vẫn trả về **201 Created** thành công. Giá tiền là `11.64` (giá dự phòng). Phản hồi siêu nhanh (**40ms**) nhờ Circuit Breaker ngắt mạch kịp thời, không bắt người dùng chờ đợi.
+- **Khi nối lại mạng:** Hệ thống tự động hồi phục, trả về giá thật là `9.85`. Thời gian phản hồi (**132ms**) cho thấy cuộc gọi mạng đã thông suốt trở lại.
+- **Kết luận:** Đáp ứng hoàn hảo yêu cầu về **Degrade gracefully** (xuống cấp nhịp nhàng) và **Self-healing** (tự hồi phục).
+
+### Hình ảnh minh chứng:
+docker network disconnect cab-booking-pass-level_default cab_pricing_service
+![alt text](img/image-102.png)
+docker network connect cab-booking-pass-level_default cab_pricing_service
+![alt text](img/image-103.png)
+## TC 80: Graceful Degradation (Xuống cấp hệ thống nhịp nhàng)
+- **Kịch bản:** Giả lập lỗi ở tính năng dự báo AI (Module ETA).
+- **Mục tiêu:** Hệ thống tự "tắt" tính năng phụ bị lỗi để ưu tiên luồng đặt xe cốt lõi không bị crash.
+
+### Kết quả & Đánh giá (Đáp ứng yêu cầu):
+1. **Tắt bớt feature không quan trọng:** Log ghi nhận `AI Service (ETA) call failed`. Hệ thống đã tự động bỏ qua module AI đang lỗi.
+2. **Vẫn giữ core function (Booking):** Đơn hàng vẫn được tạo thành công (**ID 34**) nhờ dùng công thức dự phòng (Simple logic).
+3. **Không crash:** Script trả về **201 Created**, chứng minh lỗi module phụ không làm sập toàn bộ luồng nghiệp vụ.
+
+### Hình ảnh minh họa:
+chạy lệnh: `node test-tc80.js`
+![alt text](img/image-104.png)
+chạy lệnh: `docker-compose logs -f booking-service`
+![alt text](img/image-105.png)
+
+
+# Test case level 9: SECURITY TEST
 
