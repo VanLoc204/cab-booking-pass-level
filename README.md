@@ -597,3 +597,64 @@ node test-performance-auto-scaling.js
 
 ---
 *Ghi chú: Cơ chế này đảm bảo tính "Eventual Consistency" (Sự nhất quán cuối cùng) cho hệ thống Microservices.*
+
+## TC 74:
+chưa làm được 
+## TC 75: Circuit Breaker - Ngắt mạch bảo vệ hệ thống (Resilience)
+- **Ngữ cảnh:** Dịch vụ tính giá (`pricing-service`) bị lỗi liên tục hoặc không phản hồi.
+- **Mục tiêu:** Kiểm tra khả năng tự động ngắt mạch của Booking Service để tránh làm treo hệ thống và sử dụng giá dự phòng (Fallback).
+
+### 1. Các bước thực hiện:
+- **Bước 1:** Đánh sập Pricing Service: `docker-compose stop pricing-service`
+- **Bước 2:** Chạy script kiểm thử gửi 6 yêu cầu liên tiếp: `node test-tc75.js`
+
+### 2. Giải thích kết quả (Minh chứng với Giảng viên):
+
+| Yêu cầu của thầy | Minh chứng thực tế | Giải thích kỹ thuật |
+| :--- | :--- | :--- |
+| **Circuit breaker mở** | Request #1 tốn **~3.2s**, các Request từ #2 - #6 tốn cực nhanh (**< 500ms**). | Ở lần đầu, hệ thống tốn thời gian để **Retry**. Sau khi đủ số lần lỗi, Circuit Breaker chuyển sang trạng thái **OPEN** (Ngắt mạch). |
+| **Ngừng gọi service lỗi** | Thời gian phản hồi giảm đột ngột từ hàng nghìn ms xuống vài chục ms. | Khi mạch đã **OPEN**, Booking Service ngừng gửi request qua mạng tới Pricing Service, trả về kết quả ngay lập tức để tiết kiệm tài nguyên. |
+| **Tránh cascade failure** | Script vẫn nhận được mã **201 Created** kèm giá tiền dự phòng. | Dù Pricing Service bị sập, Booking Service vẫn hoạt động ổn định nhờ cơ chế **Fallback**, giúp lỗi không bị "lây lan" làm sập toàn bộ hệ thống. |
+
+### 3. Hình ảnh minh họa:
+![alt text](img/image-97.png)
+![alt text](img/image-98.png)
+![alt text](img/image-99.png)
+
+## TC 76: Partial System Failure Handling - Xử lý lỗi một phần hệ thống
+- **Ngữ cảnh:** Dịch vụ quản lý tài xế (`driver-service`) bị sập hoặc không thể truy cập trong lúc khách hàng đang đặt xe.
+- **Mục tiêu:** Chứng minh hệ thống không bị sập toàn bộ (No Global Crash). Dịch vụ Booking vẫn phải tiếp nhận đơn hàng và đưa vào trạng thái chờ xử lý thay vì báo lỗi cho người dùng.
+
+### 1. Các bước thực hiện:
+- **Bước 1:** Đánh sập Driver Service: `docker-compose stop driver-service`
+- **Bước 2:** Thực hiện đặt xe qua Postman hoặc script tới API `/bookings`.
+
+### 2. Giải thích kết quả (Minh chứng với Giảng viên):
+
+| Yêu cầu của thầy | Minh chứng thực tế | Giải thích kỹ thuật |
+| :--- | :--- | :--- |
+| **Một phần hệ thống lỗi** | Dịch vụ `driver-service` ở trạng thái **STOPPED**. | Đây là một mắt xích quan trọng trong luồng đặt xe (dùng để tìm tài xế gần nhất). |
+| **Phần còn lại vẫn hoạt động** | Request trả về mã **201 Created**, đơn hàng đã nằm trong DB. | Dù không tìm được tài xế ngay lập tức, Booking Service vẫn hoàn tất việc tính giá, tính ETA và lưu thông tin đơn hàng vào Postgres. |
+| **Không crash toàn hệ thống** | Người dùng nhận được phản hồi với `status: "PENDING"`. | Thay vì trả về lỗi 500 (Internal Server Error), hệ thống tự động kích hoạt **Fallback logic**, chuyển đơn hàng sang trạng thái **PENDING** để xử lý sau khi Driver Service phục hồi. |
+
+### 3. Hình ảnh minh họa:
+![alt text](img/image-100.png)
+
+mở lại driver-service:
+docker-compose start driver-service
+
+## TC 77: Retry Exponential Backoff - Thử lại và Tự hồi phục (Self-healing)
+- **Kịch bản:** Đánh sập Pricing Service -> Gửi yêu cầu đặt xe -> Sau 3 giây bật lại service.
+- **Kết quả:** Hệ thống tự động thử lại thành công và trả về mã **201 Created**.
+
+### Giải thích minh chứng (Đáp ứng yêu cầu của thầy):
+1. **Retry sau 1s -> 2s -> 4s:** Tổng thời gian xử lý trong script là **4224ms (~4.2 giây)**. Điều này chứng minh hệ thống đã thực hiện đúng các khoảng nghỉ tăng dần: *1s (lần 1) + 2s (lần 2)* mới có kết quả thành công ở lần 3.
+2. **Không spam request:** Thời gian phản hồi kéo dài (4 giây thay vì 0.2 giây) chứng tỏ hệ thống đã "đợi" đúng nhịp, không gửi dồn dập làm quá tải tài nguyên.
+3. **Thành công khi service hồi phục:** Kết quả trả về giá tiền thật (**13.05**), khẳng định hệ thống có khả năng tự kết nối lại và hoàn tất nghiệp vụ ngay khi dịch vụ sống lại.
+
+### Hình ảnh minh họa:
+![alt text](img/image-101.png)
+
+## TC 78:
+
+

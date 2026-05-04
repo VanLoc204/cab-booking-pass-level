@@ -59,40 +59,26 @@ class BookingService {
       finalDuration = finalDuration || Math.ceil(Number(distance) * 2.5); // Fallback logic
     }
 
-    // Pricing Service Call for Price with Retry & Fallback
+    // Pricing Service Call for Price with Circuit Breaker & Fallback
     let finalPrice = price;
     try {
-      const pricingServiceUrl = process.env.PRICING_SERVICE_URL || 'http://pricing-service:3005';
-      const axios = require('axios');
+      const { pricingServiceClient } = require('../utils/serviceClient');
       
-      let pAttempts = 0;
-      let pSuccess = false;
-      let pricingRes;
+      // Sử dụng Resilient Client (Bulkhead -> Circuit Breaker -> Retry)
+      const pricingRes = await pricingServiceClient.post('/api/pricing', { 
+        distance_km: Number(distance),
+        demand_index: 1.0 
+      }, { timeout: 2000 }, async () => {
+        // Fallback nội bộ khi Circuit Breaker OPEN hoặc lỗi
+        const fbPrice = price || (Math.random() * (25 - 8) + 8).toFixed(2);
+        console.log(`[CircuitBreaker] Fallback active: Using price ${fbPrice}`);
+        return { price: fbPrice };
+      });
 
-      while (pAttempts < 3 && !pSuccess) {
-        pAttempts++;
-        try {
-          console.log(`[BookingService] Pricing call attempt ${pAttempts} at: ${pricingServiceUrl}/api/pricing`);
-          pricingRes = await axios.post(`${pricingServiceUrl}/api/pricing`, { 
-            distance_km: Number(distance),
-            demand_index: 1.0 
-          }, { timeout: 2000 });
-          pSuccess = true;
-        } catch (error) {
-          console.warn(`[BookingService] Pricing attempt ${pAttempts} failed: ${error.message}`);
-          if (pAttempts < 3) await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
-
-      if (pSuccess) {
-        finalPrice = pricingRes.data.price;
-        console.log(`[BookingService] Fetched Price: ${finalPrice}`);
-      } else {
-        console.error(`[BookingService] All 3 Pricing attempts failed. Using Fallback price.`);
-        finalPrice = finalPrice || (Math.random() * (25 - 8) + 8).toFixed(2);
-      }
+      finalPrice = pricingRes.price;
+      console.log(`[BookingService] Fetched Price: ${finalPrice}`);
     } catch (err) {
-      console.error(`[BookingService] Critical Pricing failure: ${err.message}`);
+      console.error(`[BookingService] Pricing failure (handled by CB): ${err.message}`);
       finalPrice = finalPrice || (Math.random() * (25 - 8) + 8).toFixed(2);
     }
 
